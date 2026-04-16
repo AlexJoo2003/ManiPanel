@@ -1,0 +1,36 @@
+{
+  "name": "manipanel",
+  "version": "0.0.0",
+  "description": "A Manifest driven control Panel for self-hosted containerized services.",
+  "keywords": [
+    "control",
+    "panel"
+  ],
+  "homepage": "https://github.com/AlexJoo2003/ManiPanel#readme",
+  "bugs": {
+    "url": "https://github.com/AlexJoo2003/ManiPanel/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlexJoo2003/ManiPanel.git"
+  },
+  "license": "GPL-3.0-only",
+  "author": "Alexander Alnoumeh",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.6.0",
+    "eslint": "^10.2.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.2"
+  }
+}
