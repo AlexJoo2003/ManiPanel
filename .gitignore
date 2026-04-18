@@ -139,7 +139,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 # private tests
-test_projects/
+tests
 
 # vscode settings
 .vscode/

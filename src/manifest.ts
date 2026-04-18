@@ -1,48 +1,55 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { parse } from "smol-toml";
+import * as z from "zod";
 
-export interface Manifest {
-	name: string;
-	compose_file: string;
-	description?: string;
-	command: Command[];
-}
-export interface Command {
-	id: string;
-	enabled: boolean;
-	label?: string;
-	description?: string;
-	script: string;
-	cooldown?: number;
-	danger?: boolean;
-	confirm?: string;
-}
+export const VALID_MANIFEST_NAMES: string[] = ["manipanel.toml"];
 
-async function readManifest(path: string): Promise<string> {
-	try {
-		const filePath = resolve(path);
-		const contents = await readFile(filePath, { encoding: "utf8" });
-		return contents;
-	} catch (err) {
-		throw new Error(`Couldn't read manifest at ${path}`, { cause: err });
-	}
-}
+export type Manifest = z.infer<typeof ManifestSchema>;
+export type Command = z.infer<typeof CommandSchema>;
 
-async function parseTOML(path: string): Promise<Manifest> {
-	const contents = await readManifest(path);
-	const parsed = parse(contents);
-	const result: Manifest = parsed as unknown as Manifest;
-	return result;
-}
+const CommandSchema = z
+	.object({
+		id: z.string(),
+		enabled: z.boolean().default(true),
+		label: z.string().default(""),
+		description: z.string().default(""),
+		script: z.string().default(""),
+		cooldown: z.number().default(0),
+		danger: z.boolean().default(false),
+		confirm: z.string().default(""),
+	})
+	.transform((command) => ({
+		...command,
+		label: command.label === "" ? command.id : command.label,
+	}));
 
-export async function parseManifest(path: string): Promise<Manifest> {
-	const extension = path.split(".").at(-1);
-	switch (extension) {
-		case "toml":
-			return parseTOML(path);
-		default:
-			console.log("unsupported extension.");
-			throw new Error(`Couldn't parse manifest at ${path}`);
+const ManifestSchema = z
+	.object({
+		name: z.string(),
+		composeFile: z.string(),
+		description: z.string().default(""),
+		command: z.array(CommandSchema).default([]), // command instead of commands, because command looks nicer in toml
+	})
+	.superRefine((manifest, ctx) => {
+		const ids = new Set<string>();
+		manifest.command.forEach((command, index) => {
+			if (ids.has(command.id)) {
+				ctx.addIssue({
+					code: "custom",
+					message: `Duplicate command id ${command.id} in manifest: ${manifest.name}`,
+					input: command.id,
+					path: ["command", index, "id"],
+				});
+			}
+			ids.add(command.id);
+		});
+	});
+
+export function validateManifest(
+	data: unknown,
+): { ok: true; value: Manifest } | { ok: false; value: string } {
+	const result = ManifestSchema.safeParse(data);
+	if (result.success) {
+		return { ok: true, value: result.data };
+	} else {
+		return { ok: false, value: z.prettifyError(result.error) };
 	}
 }
