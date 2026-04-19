@@ -2,29 +2,23 @@ import type { Dirent } from "node:fs";
 import { readdir, access } from "node:fs/promises";
 import path from "node:path";
 
-import {
-	type Manifest,
-	validateManifest,
-	VALID_MANIFEST_NAMES,
-} from "./manifest.js";
+import { type Manifest, validateManifest, VALID_MANIFEST_NAMES } from "./manifest.js";
 import { parseFile } from "./parser.js";
 
 export interface Project {
-	type: "validProject";
+	valid: true;
 	projectRoot: string;
 	manifestPath: string;
 	composeFilePath: string;
 	manifest: Manifest;
 }
 export interface InvalidProject {
-	type: "invalidProject";
+	valid: false;
 	projectRoot: string;
 	reason: string;
 }
 
-async function createProject(
-	manifestDirent: Dirent,
-): Promise<Project | InvalidProject> {
+async function createProject(manifestDirent: Dirent): Promise<Project | InvalidProject> {
 	const projectRoot = manifestDirent.parentPath;
 	const manifestPath = path.join(projectRoot, manifestDirent.name);
 
@@ -33,7 +27,7 @@ async function createProject(
 		parsedManifest = await parseFile(manifestPath);
 	} catch (err) {
 		return {
-			type: "invalidProject",
+			valid: false,
 			projectRoot: projectRoot,
 			reason: err instanceof Error ? err.message : String(err),
 		};
@@ -42,7 +36,7 @@ async function createProject(
 
 	if (!validateManifestResult.ok) {
 		return {
-			type: "invalidProject",
+			valid: false,
 			projectRoot: projectRoot,
 			reason: validateManifestResult.value,
 		};
@@ -55,14 +49,14 @@ async function createProject(
 		await access(composeFilePath);
 	} catch {
 		return {
-			type: "invalidProject",
+			valid: false,
 			projectRoot: projectRoot,
 			reason: `Given compose file doesn't exist: composeFile = "${composeFilePath}"`,
 		};
 	}
 
 	return {
-		type: "validProject",
+		valid: true,
 		projectRoot: projectRoot,
 		manifestPath: manifestPath,
 		composeFilePath: composeFilePath,
@@ -74,8 +68,7 @@ async function getManifestFile(path: string): Promise<Dirent | undefined> {
 	try {
 		const files = await readdir(path, { withFileTypes: true });
 		for (const file of files) {
-			if (file.isFile() && VALID_MANIFEST_NAMES.includes(file.name))
-				return file;
+			if (file.isFile() && VALID_MANIFEST_NAMES.includes(file.name)) return file;
 		}
 		return undefined;
 	} catch (err) {
@@ -83,21 +76,16 @@ async function getManifestFile(path: string): Promise<Dirent | undefined> {
 	}
 }
 
-async function getProject(
-	projectDirectory: Dirent,
-): Promise<Project | InvalidProject | undefined> {
-	const manifestFile = await getManifestFile(
-		path.join(projectDirectory.parentPath, projectDirectory.name),
-	);
+async function getProject(projectDirectory: Dirent): Promise<Project | InvalidProject | undefined> {
+	const manifestFile = await getManifestFile(path.join(projectDirectory.parentPath, projectDirectory.name));
 	if (manifestFile == undefined) return undefined;
 	return await createProject(manifestFile);
 }
 
 export async function scanProjects(
 	projectParentPaths: string[],
-): Promise<{ projects: Project[]; invalidProjects: InvalidProject[] }> {
-	if (projectParentPaths.length == 0)
-		throw new Error("No project parent paths given");
+): Promise<{ projects: Map<string, Project>; invalidProjects: InvalidProject[] }> {
+	if (projectParentPaths.length == 0) throw new Error("No project parent paths given");
 
 	const projects: Project[] = [];
 	const invalidProjects: InvalidProject[] = [];
@@ -114,13 +102,37 @@ export async function scanProjects(
 
 			// ignore undefined, because those have no manifest.
 			if (project != undefined) {
-				if (project.type == "validProject") {
+				if (project.valid) {
 					projects.push(project);
-				} else if (project.type == "invalidProject") {
+				} else {
 					invalidProjects.push(project);
 				}
 			}
 		}
 	}
-	return { projects, invalidProjects };
+	return { projects: indexProjects(projects, invalidProjects), invalidProjects: invalidProjects };
+}
+
+// returns a mapped project and mutates invalidProjects
+function indexProjects(projects: Project[], invalidProjects: InvalidProject[]) {
+	const projectsMap = new Map<string, Project>();
+
+	const seenIds = new Set<string>();
+	const duplicateIds = new Set<string>();
+	for (const project of projects) {
+		if (seenIds.has(project.manifest.id)) duplicateIds.add(project.manifest.id);
+		else seenIds.add(project.manifest.id);
+	}
+	for (const project of projects) {
+		if (duplicateIds.has(project.manifest.id))
+			invalidProjects.push({
+				valid: false,
+				projectRoot: project.projectRoot,
+				reason: `Duplicate id: ${project.manifest.id} at ${project.manifestPath}`,
+			});
+		else {
+			projectsMap.set(project.manifest.id, project);
+		}
+	}
+	return projectsMap;
 }

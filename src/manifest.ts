@@ -23,7 +23,8 @@ const CommandSchema = z
 
 const ManifestSchema = z
 	.object({
-		name: z.string(),
+		id: z.string(),
+		label: z.string().default(""),
 		composeFile: z.string(),
 		description: z.string().default(""),
 		command: z.array(CommandSchema).default([]), // command instead of commands, because command looks nicer in toml
@@ -34,18 +35,20 @@ const ManifestSchema = z
 			if (ids.has(command.id)) {
 				ctx.addIssue({
 					code: "custom",
-					message: `Duplicate command id ${command.id} in manifest: ${manifest.name}`,
+					message: `Duplicate command id ${command.id} in manifest: ${manifest.label}`,
 					input: command.id,
 					path: ["command", index, "id"],
 				});
 			}
 			ids.add(command.id);
 		});
-	});
+	})
+	.transform((manifest) => ({
+		...manifest,
+		label: manifest.label === "" ? manifest.id : manifest.label,
+	}));
 
-export function validateManifest(
-	data: unknown,
-): { ok: true; value: Manifest } | { ok: false; value: string } {
+export function validateManifest(data: unknown): { ok: true; value: Manifest } | { ok: false; value: string } {
 	const result = ManifestSchema.safeParse(data);
 	if (result.success) {
 		return { ok: true, value: result.data };
